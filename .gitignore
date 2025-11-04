@@ -1,0 +1,15 @@
+*.pt
+*.pth
+__pycache__/
+.env
+.venv/
+.data/
+.old/
+dev/
+expe/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+data/processed/*
+data/raw/*

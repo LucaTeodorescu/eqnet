@@ -1,0 +1,13 @@
+{
+    // 1) VS Code/Cursor Python extension: point to your venv's python
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+
+    // 2) Ruff: explicitly use the same interpreter (prevents the “missing” error)
+    "ruff.interpreter": [
+      "${workspaceFolder}/.venv/bin/python"
+    ],
+
+    // (Optional but helps SSHFS setups)
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.autoImportCompletions": true
+  }

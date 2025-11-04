@@ -1,0 +1,11 @@
+pyproject.toml
+src/__init__.py
+src/eqnet.egg-info/PKG-INFO
+src/eqnet.egg-info/SOURCES.txt
+src/eqnet.egg-info/dependency_links.txt
+src/eqnet.egg-info/requires.txt
+src/eqnet.egg-info/top_level.txt
+src/models/__init__.py
+src/models/simple_gcn.py
+src/modules/blocks.py
+src/modules/radial.py

@@ -1,0 +1,55 @@
+[project]
+name = "eqnet"
+version = "0.0.1"
+requires-python = ">=3.10"
+dependencies = [
+    "ase>=3.26.0",
+    "e3nn>=0.5.8",
+    "numpy>=2.2.6",
+    "pyyaml>=6.0.3",
+    "torch==2.4.*",
+    "torch-geometric>=2.7.0",
+    "tqdm>=4.67.1",
+]
+
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cu121"
+
+[dependency-groups]
+dev = [
+    "black>=25.9.0",
+    "ipython>=8.37.0",
+    "mypy>=1.18.2",
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.1",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 200
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E203"]  # plays nice with Black
+target-version = "py310"
+exclude = [".old/"]
+
+[tool.black]
+exclude = ".old/"
+line-length = 200
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+strict = true
+exclude = ".old/"

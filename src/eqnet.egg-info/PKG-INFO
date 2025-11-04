@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: eqnet
+Version: 0.0.1
+Requires-Python: >=3.10
+Requires-Dist: ase>=3.26.0
+Requires-Dist: e3nn>=0.5.8
+Requires-Dist: numpy>=2.2.6
+Requires-Dist: pyyaml>=6.0.3
+Requires-Dist: torch==2.4.*
+Requires-Dist: torch-geometric>=2.7.0
+Requires-Dist: tqdm>=4.67.1
