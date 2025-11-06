@@ -77,6 +77,22 @@ class NodeEmbedding(nn.Module):
         node_feat_one_hot = F.one_hot(node_feat[:, 0].to(torch.int64), self._n_types)
         return node_feat_one_hot.float()  # Convert to float for neural network layers
 
+class ShEmbeddingBlock(nn.Module):
+    """Embeds Distances into Spherical Harmonics basis
+
+    Args:
+        nn (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    def __init__(self, irreps_sh):
+        super().__init__()
+        self.irreps_sh = irreps_sh
+
+    def forward(self, edge_attr: torch.Tensor) -> torch.Tensor:
+        edge_attr = o3.spherical_harmonics(self.irreps_sh, edge_attr, normalize=True, normalization='component')
+        return edge_attr
 
 class GCNConvLayer(MessagePassing):
     """Graph Convolutional layer without equivariance, Kipf et Welling, 2017
