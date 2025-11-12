@@ -5,6 +5,7 @@ Requires-Python: >=3.10
 License-File: LICENSE
 Requires-Dist: ase>=3.26.0
 Requires-Dist: e3nn>=0.5.8
+Requires-Dist: matplotlib>=3.10.7
 Requires-Dist: numpy>=2.2.6
 Requires-Dist: pyyaml>=6.0.3
 Requires-Dist: torch==2.4.*

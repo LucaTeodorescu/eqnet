@@ -5,13 +5,14 @@ from e3nn import o3
 from e3nn.o3 import (
     TensorProduct,
 )
+import e3nn.nn as enn
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops, degree
 
 from .radial import (
     BesselBasis,
     ChebychevBasis,
-    GaussianBasis,
+    GaussianBasis,x
     PolynomialCutoff,
 )
 
@@ -175,7 +176,7 @@ class EdgeWeightMLP(nn.Module):
         for i, (s1, s2) in enumerate(zip(layers_size_list, layers_size_list[1:], strict=False)):
             if i != len(layers_size_list) - 2:
                 layers.append(nn.Linear(s1, s2))
-                layers.append(nn.BatchNorm1d(s2, momentum=0.5))
+                layers.append(enn.BatchNorm1d(s2, momentum=0.5))
                 layers.append(nn.Dropout(dropout_p))
                 layers.append(nn.ReLU())
             else:
@@ -261,7 +262,6 @@ class EquiConvLayer(MessagePassing):
         edge_index,
         edge_attr,
         edge_features,
-        batch,
     ):
         """Forward pass"""
 
