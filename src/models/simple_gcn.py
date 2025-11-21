@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import Data
 
-from modules.blocks import GCNConvLayer, NodeEmbedding
+from ..modules.blocks import GCNConvLayer, NodeEmbedding
 
 
 class SimpleGCN(nn.Module):

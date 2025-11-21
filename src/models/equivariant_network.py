@@ -3,7 +3,7 @@ import e3nn.o3 as o3
 import torch
 import torch.nn as nn
 
-from ..src.modules.blocks import (
+from ..modules.blocks import (
     EquiConvLayer,
     NodeEmbedding,
     RadialEmbeddingBlock,
@@ -43,6 +43,7 @@ class EquivariantNetwork(nn.Module):
         self.irreps_sh = irreps_sh
         self.irreps_hiddens = irreps_hiddens
         self.num_particle_types = num_particle_types
+        self.num_layers = len(irreps_hiddens) - 1
 
         # Training configuration
         self.dropout_p = dropout_p
@@ -56,13 +57,11 @@ class EquivariantNetwork(nn.Module):
             output_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
         self.output_list = output_list
         self.ntargets = len(output_list)
-        self.edge_type_interactions = nn.Parameter(torch.tensor([[1, 0, 1, 0], [1, 0, 0, 1], [0, 1, 1, 0], [0, 1, 0, 1]]), requires_grad=False)
-
-        if skip_conn:
-            layer_irreps_in = [irreps_in + irr for irr in irreps_hiddens]
+        
+        if self.skip_conn:
+            self.irreps_hiddens_sc = [irreps_in + irr for irr in irreps_hiddens]
         else:
-            layer_irreps_in = irreps_hiddens
-        self.layer_irreps_in = layer_irreps_in
+            self.irreps_hiddens_sc = irreps_hiddens
         self.nb_hidden_scalars = [o3.Irreps(str(irr[0])).num_irreps for irr in irreps_hiddens]
 
         # Embedding layers
@@ -74,13 +73,13 @@ class EquivariantNetwork(nn.Module):
         self.layer_0 = EquiConvLayer(
             irreps_in=irreps_in,
             irreps_sh=irreps_sh,
-            irreps_out=irreps_hiddens[0],
+            irreps_out=self.irreps_hiddens[0],
             num_rad_basis=num_radial_basis,
             MLPsize=MLPsize,
             dropout_p=dropout_p,
         )
-        if batchnorm:
-            self.norm_0 = enn.BatchNorm(irreps_hiddens[0], momentum=bn_momentum)
+        if self.batchnorm:
+            self.norm_0 = enn.BatchNorm(self.irreps_hiddens[0], momentum=bn_momentum)
 
         # Convolution layers
         self.conv_layers = nn.ModuleList()
@@ -88,80 +87,79 @@ class EquivariantNetwork(nn.Module):
         for i in range(self.num_layers):
             self.conv_layers.append(
                 EquiConvLayer(
-                    irreps_in=layer_irreps_in[i],
+                    irreps_in=self.irreps_hiddens_sc[i],
                     irreps_sh=irreps_sh,
-                    irreps_out=irreps_hiddens[i + 1],
+                    irreps_out=self.irreps_hiddens[i+1],
                     num_rad_basis=num_radial_basis,
                     MLPsize=MLPsize,
                     dropout_p=dropout_p,
                 )
             )
-            if batchnorm:
-                self.norm_layers.append(enn.BatchNorm(irreps_hiddens[i + 1], momentum=bn_momentum))
+            if self.batchnorm:
+                self.norm_layers.append(enn.BatchNorm(self.irreps_hiddens[i+1], momentum=bn_momentum))
 
-        self.setup_normReadout(irreps_hiddens[-1])
+        self.setup_normReadout(self.irreps_hiddens[-1])
 
         # Output layer: independent readout layer for each particle type
-        self.readout_per_type = nn.ModuleList([nn.Linear(irreps_hiddens[-1].num_irreps, self.ntargets) for _ in range(num_particle_types)])
+        self.readout_per_type = nn.ModuleList([nn.Linear(self.irreps_hiddens[-1].num_irreps, self.ntargets) 
+                                               for _ in range(num_particle_types)])
 
-        def setup_normReadout(self, irreps_hidden):
-            """Setup norm layer for readout"""
-            irreps_nonscalar = o3.Irreps(str(irreps_hidden[1:]))
-            self.outNorm = o3.Norm(irreps_nonscalar, squared=False)
+    def setup_normReadout(self, irreps_hiddens):
+        """Setup norm layer for readout"""
+        irreps_nonscalar = o3.Irreps(str(irreps_hiddens[1:]))
+        self.outNorm = o3.Norm(irreps_nonscalar, squared=False)
 
-        def forward(self, graph):
-            """Forward pass"""
-            x, edge_index, edge_attr, e_pot, delta_r = (
-                graph.x,
-                graph.edge_index,
-                graph.edge_attr.float(),
-                graph.e_pot.float(),
-                graph.delta_r.float(),
-            )
-            #TODO: embedding encoding?
-            edge_attr = self.sh_embedding_layer(edge_attr)
-            edge_features = self.radial_embedding_layer(edge_attr)
-            node_input = self.node_embedding_layer(x)
+    def forward(self, graph):
+        """Forward pass"""
+        x, edge_index, edge_attr, e_pot, delta_r = (
+            graph.x,
+            graph.edge_index,
+            graph.edge_attr.float(),
+            graph.e_pot.float(),
+            graph.delta_r.float(),
+        )
+        #TODO: embedding or encoding? (name)
+        edge_lengths = edge_attr.norm(dim=1, keepdim=True)
+        edge_attr = self.sh_embedding_layer(edge_attr)
+        edge_features, _ = self.radial_embedding_layer(edge_lengths)
+        node_input = self.node_embedding_layer(x)
 
-            if self.include_potential:
-                node_input = torch.cat((node_input, e_pot), dim=-1)
-            if self.include_cage_size:
-                node_input = torch.cat((node_input, delta_r), dim=-1)
+        if self.include_potential:
+            node_input = torch.cat((node_input, e_pot), dim=-1)
+        if self.include_cage_size:
+            node_input = torch.cat((node_input, delta_r), dim=-1)
 
-            if self.skip_conn:
-                node_copy = node_input.detach().clone()
+        if self.skip_conn:
+            node_copy = node_input.detach().clone()
 
-            x = self.layer_0(node_input, edge_index, edge_features)
+        x = self.layer_0(node_input, edge_index, edge_attr, edge_features)
+        if self.batchnorm:
+            x = self.norm_0(x)
+
+        for layer_n in range(self.num_layers):
+            node_features_in = torch.cat((node_copy, x), dim=-1) if self.skip_conn else x
+            node_update = self.conv_layers[layer_n](node_features_in, edge_index, edge_attr, edge_features)
+
             if self.batchnorm:
-                x = self.norm_0(x)
+                node_update = self.norm_layers[layer_n](node_update)
 
-            for layer_n in range(self.num_layers):
-                node_features_in = torch.cat((node_copy, x), dim=-1) if self.skip_conn else x
-                node_update = self.conv_layers[layer_n](node_features_in, edge_index, edge_features)
+            # Residual connection
+            if self.irreps_hiddens[layer_n + 1] == self.irreps_hiddens[layer_n]:
+                x += node_update
+            else:
+                x = node_update
 
-                if self.batchnorm:
-                    node_update = self.norm_layers[layer_n](node_update)
+        # Output layer
+        # Assumes that the irreps are ordered as [scalar, nonscalar, nonscalar, ...]
+        nonscalar_norms = self.outNorm(x[:, self.nb_hidden_scalars[-1] :])
+        x = torch.cat((x[:, : self.nb_hidden_scalars[-1]], 
+                        nonscalar_norms), 
+                        dim=-1) # concatenate scalar and nonscalar features
 
-                # Residual connection
-                if self.hidden_irreps_list[layer_n + 1] == self.hidden_irreps_list[layer_n]:
-                    x += node_update
-                else:
-                    x = node_update
-
-            # Output layer
-            # Assumes that the irreps are ordered as [scalar, nonscalar, nonscalar, ...]
-            nonscalar_norms = self.outNorm(x[:, self.nb_hidden_scalars[-1] :])
-            x = torch.cat((x[:, : self.nb_hidden_scalars[-1]], 
-                           nonscalar_norms), 
-                          dim=-1) # concatenate scalar and nonscalar features
-
-            # Readout layer - extract particle types from one-hot encoded node features
-            # TODO: make sure the mask is correctly constructed
-            particle_types = graph.x[:, 0].long()
-            for i in range(self.num_particle_types):
-                mask = particle_types == i
-                if mask.any():
-                    x[mask, :] = self.readout_per_type[i](x[mask, :])
-                else:
-                    x[mask, :] = torch.zeros(0, self.ntargets, device=x.device)
-            return x
+        # Readout layer - extract particle types from one-hot encoded node features
+        particle_types = graph.x[:, 0].long()
+        output = torch.zeros(x.shape[0], self.ntargets, device=x.device)
+        for i in range(self.num_particle_types):
+            mask = particle_types == i
+            output[mask, :] = self.readout_per_type[i](x[mask, :])
+        return output

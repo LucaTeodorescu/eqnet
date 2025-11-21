@@ -1,18 +1,15 @@
+import e3nn.nn as enn
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from e3nn import o3
-from e3nn.o3 import (
-    TensorProduct,
-)
-import e3nn.nn as enn
 from torch_geometric.nn import MessagePassing
 from torch_geometric.utils import add_self_loops, degree
 
 from .radial import (
     BesselBasis,
     ChebychevBasis,
-    GaussianBasis,x
+    GaussianBasis,
     PolynomialCutoff,
 )
 
@@ -176,13 +173,13 @@ class EdgeWeightMLP(nn.Module):
         for i, (s1, s2) in enumerate(zip(layers_size_list, layers_size_list[1:], strict=False)):
             if i != len(layers_size_list) - 2:
                 layers.append(nn.Linear(s1, s2))
-                layers.append(enn.BatchNorm1d(s2, momentum=0.5))
+                layers.append(nn.BatchNorm1d(s2, momentum=0.5))
                 layers.append(nn.Dropout(dropout_p))
                 layers.append(nn.ReLU())
             else:
                 layers.append(nn.Linear(s1, s2))
 
-            self.net = nn.Sequential(*layers)
+            self.network = nn.Sequential(*layers)
 
     def forward(self, edge_attr: torch.Tensor) -> torch.Tensor:
         """Forward pass"""
@@ -191,7 +188,18 @@ class EdgeWeightMLP(nn.Module):
 
 
 class EquiConvLayer(MessagePassing):
-    """Equivariant Graph Convolutional layer"""
+    """Equivariant Convolutional layer
+
+    Args:
+        irreps_in: o3.Irreps, input irreps
+        irreps_sh: o3.Irreps, spherical harmonics irreps
+        irreps_out: o3.Irreps, output irreps
+        num_rad_basis: int, number of radial basis functions
+        MLPsize: list[int], size of the MLP
+        dropout_p: float, dropout rate
+        Returns:
+        x: torch.Tensor, [n_nodes, out_irreps]
+    """
 
     def __init__(
         self,
@@ -202,14 +210,17 @@ class EquiConvLayer(MessagePassing):
         MLPsize: list[int] = None,
         dropout_p: float = 0.0,
     ):
+        """Initialize the layer"""
         if MLPsize is None:
             MLPsize = [16]
+        self.MLPsize = MLPsize
         super().__init__(aggr="add")
         self.irreps_in = irreps_in
         self.irreps_sh = irreps_sh
         self.irreps_out = irreps_out
         self.dropout_p = dropout_p
-
+        self.num_rad_basis = num_rad_basis
+        
         self.prepareTensorProduct(self.irreps_in, self.irreps_sh, self.irreps_out)
         self.lin = o3.Linear(
             irreps_in=self.irreps_product.simplify(),
@@ -217,7 +228,7 @@ class EquiConvLayer(MessagePassing):
             internal_weights=True,
             shared_weights=True,
         )
-        self.list_size_layers = [self.num_rad_basis] + MLPsize + [self.irreps_product.weight_numel]
+        self.list_size_layers = [self.num_rad_basis] + MLPsize + [self.tensor_product.weight_numel]
         self.edge_mlp = EdgeWeightMLP(self.list_size_layers, dropout_p)
 
     def prepareTensorProduct(
@@ -225,7 +236,7 @@ class EquiConvLayer(MessagePassing):
         in1_irreps: o3.Irreps,
         in2_irreps: o3.Irreps,
         out_irreps: o3.Irreps,
-    ) -> TensorProduct:
+    ) -> o3.TensorProduct:
         """Prepare TensorProduct (no channel mixing: 'uvu')."""
 
         irreps_product_list = []
@@ -245,7 +256,7 @@ class EquiConvLayer(MessagePassing):
         irreps_product, permutation, _ = irreps_product.sort()
         instructions = [(i1, i2, permutation[i_out], mode, train) for (i1, i2, i_out, mode, train) in instructions]
 
-        self.tensor_product = TensorProduct(
+        self.tensor_product = o3.TensorProduct(
             in1_irreps,
             in2_irreps,
             irreps_product,

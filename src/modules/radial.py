@@ -12,9 +12,6 @@ import numpy as np
 import torch
 from e3nn.util.jit import compile_mode
 
-from tools.scatter import scatter_sum
-
-
 @compile_mode("script")
 class BesselBasis(torch.nn.Module):
     """
@@ -120,66 +117,6 @@ class PolynomialCutoff(torch.nn.Module):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(p={self.p}, r_max={self.r_max})"
-
-
-@compile_mode("script")
-class ZBLBasis(torch.nn.Module):
-    """Implementation of the Ziegler-Biersack-Littmark (ZBL) potential
-    with a polynomial cutoff envelope.
-    """
-
-    p: torch.Tensor
-
-    def __init__(self, p=6, trainable=False, **kwargs):
-        super().__init__()
-        if "r_max" in kwargs:
-            logging.warning("r_max is deprecated. r_max is determined from the covalent radii.")
-
-        # Pre-calculate the p coefficients for the ZBL potential
-        self.register_buffer(
-            "c",
-            torch.tensor([0.1818, 0.5099, 0.2802, 0.02817], dtype=torch.get_default_dtype()),
-        )
-        self.register_buffer("p", torch.tensor(p, dtype=torch.int))
-        self.register_buffer(
-            "covalent_radii",
-            torch.tensor(
-                ase.data.covalent_radii,
-                dtype=torch.get_default_dtype(),
-            ),
-        )
-        if trainable:
-            self.a_exp = torch.nn.Parameter(torch.tensor(0.300, requires_grad=True))
-            self.a_prefactor = torch.nn.Parameter(torch.tensor(0.4543, requires_grad=True))
-        else:
-            self.register_buffer("a_exp", torch.tensor(0.300))
-            self.register_buffer("a_prefactor", torch.tensor(0.4543))
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        node_attrs: torch.Tensor,
-        edge_index: torch.Tensor,
-        atomic_numbers: torch.Tensor,
-    ) -> torch.Tensor:
-        sender = edge_index[0]
-        receiver = edge_index[1]
-        node_atomic_numbers = atomic_numbers[torch.argmax(node_attrs, dim=1)].unsqueeze(-1)
-        Z_u = node_atomic_numbers[sender].to(torch.int64)
-        Z_v = node_atomic_numbers[receiver].to(torch.int64)
-        a = self.a_prefactor * 0.529 / (torch.pow(Z_u, self.a_exp) + torch.pow(Z_v, self.a_exp))
-        r_over_a = x / a
-        phi = self.c[0] * torch.exp(-3.2 * r_over_a) + self.c[1] * torch.exp(-0.9423 * r_over_a) + self.c[2] * torch.exp(-0.4028 * r_over_a) + self.c[3] * torch.exp(-0.2016 * r_over_a)
-        v_edges = (14.3996 * Z_u * Z_v) / x * phi
-        r_max = self.covalent_radii[Z_u] + self.covalent_radii[Z_v]
-        envelope = PolynomialCutoff.calculate_envelope(x, r_max, self.p)
-        v_edges = 0.5 * v_edges * envelope
-        V_ZBL = scatter_sum(v_edges, receiver, dim=0, dim_size=node_attrs.size(0))
-        return V_ZBL.squeeze(-1)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(c={self.c})"
-
 
 class RadialMLP(torch.nn.Module):
     """
